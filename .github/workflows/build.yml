@@ -1,0 +1,169 @@
+name: Tu Dong Tao Code Va Build EXE
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: 1. Tu Dong Tao File Code Cong Cu (main.py)
+      shell: powershell
+      run: |
+        $code = @'
+        import time, subprocess, threading
+        import tkinter as tk
+        from tkinter import messagebox
+        from pynput import keyboard, mouse
+        from pywinauto import Desktop, Application
+
+        class SmartAutomationApp:
+            def __init__(self, root):
+                self.root = root
+                self.root.title("Cong cu Tu dong hoa Thong minh v3.0")
+                self.root.geometry("550x450")
+                self.root.resizable(False, False)
+                self.is_recording, self.is_running = False, False
+                self.actions_log, self.desktop = [], Desktop(backend="uia")
+                self.start_time, self.current_focused_element, self.proc = 0, None, None
+                self.create_widgets()
+                mouse.Listener(on_click=self.on_click).start()
+                keyboard.Listener(on_press=self.on_press).start()
+
+            def create_widgets(self):
+                cf = tk.LabelFrame(self.root, text=" Cau hinh duong dan & Cua so ", padx=10, pady=10)
+                cf.pack(fill="x", padx=15, pady=10)
+                tk.Label(cf, text="Path (.exe):").grid(row=0, column=0, sticky="w")
+                self.entry_path = tk.Entry(cf, width=40); self.entry_path.grid(row=0, column=1, pady=5)
+                self.entry_path.insert(0, r"C:\Windows\notepad.exe")
+                tk.Label(cf, text="Title app:").grid(row=1, column=0, sticky="w")
+                self.entry_title = tk.Entry(cf, width=40); self.entry_title.grid(row=1, column=1, pady=5)
+                self.entry_title.insert(0, "Untitled - Notepad")
+
+                tf = tk.LabelFrame(self.root, text=" Thiet lap thoi gian ", padx=10, pady=10)
+                tf.pack(fill="x", padx=15, pady=5)
+                tk.Label(tf, text="Sau khi thuc hien xong, cho:").grid(row=0, column=0, sticky="w")
+                self.entry_time = tk.Entry(tf, width=10); self.entry_time.grid(row=0, column=1, padx=5)
+                self.entry_time.insert(0, "10")
+                tk.Label(tf, text="giay roi Reset.").grid(row=0, column=2, sticky="w")
+
+                bf = tk.Frame(self.root, pady=10); bf.pack()
+                self.btn_record = tk.Button(bf, text="🔴 Hoc thiet lap (F7)", font=("Helvetica", 10, "bold"), bg="#ffcccc", width=20, command=self.toggle_record)
+                self.btn_record.grid(row=0, column=0, padx=10)
+                self.btn_run = tk.Button(bf, text="▶️ Chay Auto (F8)", font=("Helvetica", 10, "bold"), bg="#ccffcc", width=20, command=self.toggle_run)
+                self.btn_run.grid(row=0, column=1, padx=10)
+
+                lf = tk.LabelFrame(self.root, text=" Trang thai ") ; lf.pack(fill="both", expand=True, padx=15, pady=10)
+                self.log_text = tk.Text(lf, height=10, state="disabled", bg="#f0f0f0") ; self.log_text.pack(fill="both", expand=True, padx=5, pady=5)
+
+            def write_log(self, msg):
+                self.log_text.config(state="normal"); self.log_text.insert(tk.END, msg + "\n"); self.log_text.see(tk.END); self.log_text.config(state="disabled")
+
+            def toggle_record(self):
+                if not self.is_recording:
+                    if self.is_running: return
+                    self.actions_log.clear(); self.start_time = time.time(); self.is_recording = True
+                    self.btn_record.config(text="⏹️ Dung Hoc (F7)", bg="#ff3333", fg="white")
+                    self.write_log("🔴 CHEDO HOC BAT: Hay thao tac tren phan mem...")
+                else:
+                    self.is_recording = False
+                    self.btn_record.config(text="🔴 Hoc thiet lap (F7)", bg="#ffcccc", fg="black")
+                    self.write_log(f"⏹️ DUNG HOC. Da luu {len(self.actions_log)} hanh dong.")
+
+            def on_click(self, x, y, button, pressed):
+                if self.is_recording and pressed:
+                    try:
+                        el = self.desktop.from_point(x, y)
+                        t, c = el.window_text(), el.element_info.control_type
+                        self.current_focused_element = {'title': t, 'control_type': c}
+                        self.actions_log.append({'action_type': 'click', 'title': t, 'control_type': c, 'time': time.time() - self.start_time})
+                        self.root.after(0, self.write_log, f"👉 Click: [{c}] '{t}'")
+                    except Exception: pass
+
+            def on_press(self, key):
+                if key == keyboard.Key.f7: self.root.after(0, self.toggle_record)
+                elif key == keyboard.Key.f8: self.root.after(0, self.toggle_run)
+                elif self.is_recording and self.current_focused_element:
+                    try:
+                        ch = key.char
+                        if ch: self.actions_log.append({'action_type': 'type_text', 'title': self.current_focused_element['title'], 'control_type': self.current_focused_element['control_type'], 'text': str(ch), 'time': time.time() - self.start_time})
+                    except AttributeError:
+                        if key in [keyboard.Key.enter, keyboard.Key.tab]:
+                            self.actions_log.append({'action_type': 'press_key', 'title': self.current_focused_element['title'], 'control_type': self.current_focused_element['control_type'], 'key_name': key.name, 'time': time.time() - self.start_time})
+
+            def toggle_run(self):
+                if not self.is_running:
+                    if self.is_recording or not self.actions_log: return
+                    self.is_running = True
+                    self.btn_run.config(text="⏹️ Dung Chay (F8)", bg="#ff3333", fg="white")
+                    threading.Thread(target=self.automation_loop, daemon=True).start()
+                else:
+                    self.is_running = False
+                    self.btn_run.config(text="▶️ Chay Auto (F8)", bg="#ccffcc", fg="black")
+                    if self.proc: self.proc.kill()
+
+            def automation_loop(self):
+                path, title = self.entry_path.get(), self.entry_title.get()
+                try: delay = int(self.entry_time.get())
+                except: delay = 10
+                lc = 1
+                while self.is_running:
+                    self.write_log(f"\n🔄 === CHU KY THU {lc} ===")
+                    try: self.proc = subprocess.Popen(path)
+                    except: self.is_running = False; break
+                    time.sleep(3)
+                    try:
+                        app = Application(backend="uia").connect(title_re=f".*{title}.*")
+                        win = app.window(title_re=f".*{title}.*")
+                        pt = 0
+                        for act in self.actions_log:
+                            if not self.is_running: break
+                            time.sleep(max(0, act['time'] - pt))
+                            pt = act['time']
+                            tgt = win.child_window(title=act['title'], control_type=act['control_type'])
+                            if act['action_type'] == 'click': tgt.click_input()
+                            elif act['action_type'] == 'type_text': tgt.type_keys(act['text'], with_spaces=True, with_tabs=True)
+                            elif act['action_type'] == 'press_key': tgt.type_keys(f"{{{act['key_name']}}}")
+                        self.write_log(f"-> Cho ngam may {delay} giay...")
+                        for _ in range(delay):
+                            if not self.is_running: break
+                            time.sleep(1)
+                    except Exception as e: self.write_log(f"❌ Loi: {e}")
+                    if self.proc: self.proc.kill()
+                    time.sleep(2); lc += 1
+
+        if __name__ == "__main__":
+            root = tk.Tk()
+            app = SmartAutomationApp(root)
+            root.mainloop()
+        '@
+        Out-File -FilePath "main.py" -InputObject $code -Encoding utf8
+
+     dishonesty-check:
+      run: ls
+
+    - name: 2. Tu Dong Cai Dat Thu Vien Co San
+      run: |
+        python -m pip install --upgrade pip
+        pip install pynput pywinauto pyinstaller
+
+    - name: 3. Tu Dong Dong Goi Thanh File Chay (.exe)
+      run: |
+        python -m PyInstaller --noconfirm --onefile --windowed main.py
+
+    - name: 4. Xuat File De Tai Ve
+      uses: actions/upload-artifact@v4
+      with:
+        name: Tool_Tu_Dong_Hoa_Cua_Ban
+        path: dist/main.exe
