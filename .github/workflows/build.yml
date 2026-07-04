@@ -150,9 +150,6 @@ jobs:
         '@
         Out-File -FilePath "main.py" -InputObject $code -Encoding utf8
 
-     dishonesty-check:
-      run: ls
-
     - name: 2. Tu Dong Cai Dat Thu Vien Co San
       run: |
         python -m pip install --upgrade pip
